@@ -27,7 +27,7 @@ configured under the ``framework`` key in your application configuration.
 Configuration
 -------------
 
-.. class:: list-config-options list-config-options--complex
+.. rst-class:: list-config-options list-config-options--complex
 
 * `annotations`_
 
@@ -74,6 +74,7 @@ Configuration
 
 * `default_locale`_
 * `disallow_search_engine_index`_
+* `error_controller`_
 * `esi`_
 
   * :ref:`enabled <reference-esi-enabled>`
@@ -108,6 +109,7 @@ Configuration
     * `proxy`_
     * `resolve`_
     * `timeout`_
+    * `max_duration`_
     * `verify_host`_
     * `verify_peer`_
 
@@ -117,6 +119,7 @@ Configuration
     * `scope`_
     * `auth_basic`_
     * `auth_bearer`_
+    * `auth_ntlm`_
     * `base_uri`_
     * `bindto`_
     * `buffer`_
@@ -135,6 +138,7 @@ Configuration
     * `query`_
     * `resolve`_
     * `timeout`_
+    * `max_duration`_
     * `verify_host`_
     * `verify_peer`_
 
@@ -230,6 +234,7 @@ Configuration
 * `test`_
 * `translator`_
 
+  * `cache_dir`_
   * :ref:`default_path <reference-translator-default_path>`
   * :ref:`enabled <reference-translator-enabled>`
   * `fallbacks`_
@@ -592,6 +597,23 @@ If you're using forms, but want to avoid starting your session (e.g. using
 forms in an API-only website), ``csrf_protection`` will need to be set to
 ``false``.
 
+.. _config-framework-error_controller:
+
+error_controller
+~~~~~~~~~~~~~~~~
+
+**type**: ``string`` **default**: ``error_controller``
+
+.. versionadded:: 4.4
+
+    The ``error_controller`` option was introduced in Symfony 4.4.
+
+This is the controller that is called when an exception is thrown anywhere in
+your application. The default controller
+(:class:`Symfony\\Component\\HttpKernel\\Controller\\ErrorController`)
+renders specific templates under different error conditions (see
+:doc:`/controller/error_pages`).
+
 esi
 ~~~
 
@@ -759,6 +781,20 @@ auth_bearer
 The token used to create the ``Authorization`` HTTP header used in HTTP Bearer
 authentication (also called token authentication).
 
+auth_ntlm
+.........
+
+**type**: ``string``
+
+.. versionadded:: 4.4
+
+    The ``auth_ntlm`` option was introduced in Symfony 4.4.
+
+The username and password used to create the ``Authorization`` HTTP header used
+in the `Microsoft NTLM authentication protocol`_. The value of this option must
+follow the format ``username:password``. This authentication mechanism requires
+using the cURL-based transport.
+
 base_uri
 ........
 
@@ -771,16 +807,16 @@ every request.
 
 Here are some common examples of how ``base_uri`` merging works in practice:
 
-===================  ==============  ======================
-``base_uri``         Relative URI    Actual Requested URI
-===================  ==============  ======================
-http://foo.com       /bar            http://foo.com/bar
-http://foo.com/foo   /bar            http://foo.com/bar
-http://foo.com/foo   bar             http://foo.com/bar
-http://foo.com/foo/  bar             http://foo.com/foo/bar
-http://foo.com       http://baz.com  http://baz.com
-http://foo.com/?bar  bar             http://foo.com/bar
-===================  ==============  ======================
+=======================  ==================  ==========================
+``base_uri``             Relative URI        Actual Requested URI
+=======================  ==================  ==========================
+http://example.org       /bar                http://example.org/bar
+http://example.org/foo   /bar                http://example.org/bar
+http://example.org/foo   bar                 http://example.org/bar
+http://example.org/foo/  bar                 http://example.org/foo/bar
+http://example.org       http://symfony.com  http://symfony.com
+http://example.org/?bar  bar                 http://example.org/bar
+=======================  ==================  ==========================
 
 bindto
 ......
@@ -793,11 +829,20 @@ outgoing network interface.
 buffer
 ......
 
-**type**: ``bool`` **default**: ``false``
+**type**: ``bool`` | ``Closure``
 
 Buffering the response means that you can access its content multiple times
-without performing the request again. Pass ``true`` as the value of this option
-to enable buffering.
+without performing the request again. Buffering is enabled by default when the
+content type of the response is ``text/*``, ``application/json`` or ``application/xml``.
+
+If this option is a boolean value, the response is buffered when the value is
+``true``. If this option is a closure, the response is buffered when the
+returned value is ``true`` (the closure receives as argument an array with the
+response headers).
+
+.. versionadded:: 4.4
+
+    The support of ``Closure`` in the ``buffer`` option was introduced in Symfony 4.4.
 
 cafile
 ......
@@ -950,6 +995,18 @@ Time, in seconds, to wait for a response. If the response stales for longer, a
 :class:`Symfony\\Component\\HttpClient\\Exception\\TransportException` is thrown.
 Its default value is the same as the value of PHP's `default_socket_timeout`_
 config option.
+
+max_duration
+............
+
+**type**: ``float`` **default**: 0
+
+The maximum execution time, in seconds, that the request and the response are
+allowed to take. A value lower than or equal to 0 means it is unlimited.
+
+.. versionadded:: 4.4
+
+    The ``max_duration`` option was introduced in Symfony 4.4.
 
 verify_host
 ...........
@@ -1176,6 +1233,8 @@ The service id used for session storage. The ``session.storage`` service
 alias will be set to this service id. This class has to implement
 :class:`Symfony\\Component\\HttpFoundation\\Session\\Storage\\SessionStorageInterface`.
 
+.. _config-framework-session-handler-id:
+
 handler_id
 ..........
 
@@ -1183,11 +1242,8 @@ handler_id
 
 The service id used for session storage. The default ``null`` value means to use
 the native PHP session mechanism. Set it to ``'session.handler.native_file'`` to
-let Symfony manage the sessions itself using files to store the session
-metadata.
-
-If you prefer to make Symfony store sessions in a database read
-:doc:`/doctrine/pdo_session_storage`.
+let Symfony manage the sessions itself using files to store the session metadata.
+You can also :doc:`store sessions in a database </session/database>`.
 
 .. _name:
 
@@ -1290,6 +1346,7 @@ The possible values for this option are:
 
 * ``null``, use it to disable this protection. Same behavior as in older Symfony
   versions.
+* ``none``, use it to explicit disable this protection.
 * ``'strict'`` (or the ``Cookie::SAMESITE_STRICT`` constant), use it to never
   send any cookie when the HTTP request is not originated from the same domain.
 * ``'lax'`` (or the ``Cookie::SAMESITE_LAX`` constant), use it to allow sending
@@ -1301,6 +1358,8 @@ The possible values for this option are:
 
     This option is available starting from PHP 7.3, but Symfony has a polyfill
     so you can use it with any older PHP version as well.
+    
+    Use 'none' value only works when cookie_secure is true.
 
 cookie_secure
 .............
@@ -1422,12 +1481,9 @@ metadata_update_threshold
 
 **type**: ``integer`` **default**: ``0``
 
-This is how many seconds to wait between updating/writing the session metadata. This
-can be useful if, for some reason, you want to limit the frequency at which the
-session persists.
-
-Starting in Symfony 3.4, session data is *only* written when the session data has
-changed. Previously, you needed to set this option to avoid that behavior.
+This is how many seconds to wait between updating/writing the session metadata.
+This can be useful if, for some reason, you want to limit the frequency at which
+the session persists, instead of doing that on every request.
 
 .. _reference-session-enabled:
 
@@ -1657,7 +1713,7 @@ version
 This option is used to *bust* the cache on assets by globally adding a query
 parameter to all rendered asset paths (e.g. ``/images/logo.png?v2``). This
 applies only to assets rendered via the Twig ``asset()`` function (or PHP
-equivalent) as well as assets rendered with Assetic.
+equivalent).
 
 For example, suppose you have the following:
 
@@ -2068,6 +2124,18 @@ implement :class:`Symfony\\Component\\Templating\\Loader\\LoaderInterface`.
 translator
 ~~~~~~~~~~
 
+cache_dir
+.........
+
+**type**: ``string`` | ``null`` **default**: ``%kernel.cache_dir%/translations/``
+
+.. versionadded:: 4.4
+
+    The ``cache_dir`` option was introduced in Symfony 4.4.
+
+Defines the directory where the translation cache is stored. Use ``null`` to
+disable this cache.
+
 .. _reference-translator-enabled:
 
 enabled
@@ -2215,10 +2283,10 @@ If this option is enabled, validation constraints can be defined using annotatio
 translation_domain
 ..................
 
-**type**: ``string`` **default**: ``validators``
+**type**: ``string | false`` **default**: ``validators``
 
 The translation domain that is used when translating validation constraint
-error messages.
+error messages. Use false to disable translations.
 
 .. _reference-validation-not-compromised-password:
 
@@ -2311,7 +2379,7 @@ mapping
 paths
 """""
 
-**type**: ``array`` **default**: ``[]``
+**type**: ``array`` **default**: ``['config/validation/']``
 
 This option allows to define an array of paths with files or directories where
 the component will look for additional validation files:
@@ -2325,7 +2393,7 @@ the component will look for additional validation files:
             validation:
                 mapping:
                     paths:
-                        - "%kernel.project_dir%/validation/"
+                        - "%kernel.project_dir%/config/validation/"
 
     .. code-block:: xml
 
@@ -2341,7 +2409,7 @@ the component will look for additional validation files:
             <framework:config>
                 <framework:validation>
                     <framework:mapping>
-                        <framework:path>%kernel.project_dir%/validation</framework:path>
+                        <framework:path>%kernel.project_dir%/config/validation/</framework:path>
                     </framework:mapping>
                 </framework:validation>
             </framework:config>
@@ -2354,7 +2422,7 @@ the component will look for additional validation files:
             'validation' => [
                 'mapping' => [
                     'paths' => [
-                        '%kernel.project_dir%/validation',
+                        '%kernel.project_dir%/config/validation/',
                     ],
                 ],
             ],
@@ -3018,24 +3086,25 @@ Defines the kind of workflow that is going to be created, which can be either
 a normal workflow or a state machine. Read :doc:`this article </workflow/workflow-and-state-machine>`
 to know their differences.
 
-.. _`HTTP Host header attacks`: http://www.skeletonscribe.net/2013/05/practical-http-host-header-attacks.html
+.. _`HTTP Host header attacks`: https://www.skeletonscribe.net/2013/05/practical-http-host-header-attacks.html
 .. _`Security Advisory Blog post`: https://symfony.com/blog/security-releases-symfony-2-0-24-2-1-12-2-2-5-and-2-3-3-released#cve-2013-4752-request-gethost-poisoning
-.. _`Doctrine Cache`: http://docs.doctrine-project.org/projects/doctrine-common/en/latest/reference/caching.html
+.. _`Doctrine Cache`: https://www.doctrine-project.org/projects/doctrine-cache/en/current/index.html
 .. _`egulias/email-validator`: https://github.com/egulias/EmailValidator
 .. _`RFC 5322`: https://tools.ietf.org/html/rfc5322
 .. _`PhpStormProtocol`: https://github.com/aik099/PhpStormProtocol
 .. _`phpstorm-url-handler`: https://github.com/sanduhrs/phpstorm-url-handler
-.. _`blue/green deployment`: http://martinfowler.com/bliki/BlueGreenDeployment.html
+.. _`blue/green deployment`: https://martinfowler.com/bliki/BlueGreenDeployment.html
 .. _`gulp-rev`: https://www.npmjs.com/package/gulp-rev
 .. _`webpack-manifest-plugin`: https://www.npmjs.com/package/webpack-manifest-plugin
-.. _`error_reporting PHP option`: https://secure.php.net/manual/en/errorfunc.configuration.php#ini.error-reporting
+.. _`error_reporting PHP option`: https://www.php.net/manual/en/errorfunc.configuration.php#ini.error-reporting
 .. _`CSRF security attacks`: https://en.wikipedia.org/wiki/Cross-site_request_forgery
-.. _`session.sid_length PHP option`: https://php.net/manual/session.configuration.php#ini.session.sid-length
-.. _`session.sid_bits_per_character PHP option`: https://php.net/manual/session.configuration.php#ini.session.sid-bits-per-character
+.. _`session.sid_length PHP option`: https://www.php.net/manual/session.configuration.php#ini.session.sid-length
+.. _`session.sid_bits_per_character PHP option`: https://www.php.net/manual/session.configuration.php#ini.session.sid-bits-per-character
 .. _`X-Robots-Tag HTTP header`: https://developers.google.com/search/reference/robots_meta_tag
 .. _`RFC 3986`: https://www.ietf.org/rfc/rfc3986.txt
-.. _`default_socket_timeout`: https://php.net/manual/en/filesystem.configuration.php#ini.default-socket-timeout
+.. _`default_socket_timeout`: https://www.php.net/manual/en/filesystem.configuration.php#ini.default-socket-timeout
 .. _`PEM formatted`: https://en.wikipedia.org/wiki/Privacy-Enhanced_Mail
 .. _`haveibeenpwned.com`: https://haveibeenpwned.com/
 .. _`session.cache-limiter`: https://www.php.net/manual/en/session.configuration.php#ini.session.cache-limiter
+.. _`Microsoft NTLM authentication protocol`: https://docs.microsoft.com/en-us/windows/win32/secauthn/microsoft-ntlm
 .. _`utf-8 modifier`: https://www.php.net/reference.pcre.pattern.modifiers
